@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Production build outputs
+dist/
+*/dist/
+
+# Local user study data, sqlite database, and secrets
+data/
+*/data/
+**/data/
+secrets.json
+**/secrets.json
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+backups/
+*/backups/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Taste skill design review caches
+study-app/.taste-skill/
+
+# OS / Editor metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/

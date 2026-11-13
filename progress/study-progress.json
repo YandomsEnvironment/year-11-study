@@ -1,0 +1,100 @@
+{
+  "format": "recall-backup",
+  "version": 1,
+  "exported": "2026-11-13T05:44:44.846Z",
+  "records": [
+    {
+      "type": "settings",
+      "id": "main",
+      "value": {
+        "id": "main",
+        "budget": 30,
+        "model": "gpt-5.4-mini",
+        "dailyAiLimit": 60,
+        "enabledSubjects": [
+          "maths",
+          "biology",
+          "physics",
+          "english",
+          "software",
+          "extension"
+        ],
+        "year12Enabled": false,
+        "englishTexts": "",
+        "tafeCourse": "",
+        "notes": ""
+      }
+    },
+    {
+      "type": "session",
+      "id": "83d0a699-e837-4900-9b2f-4de11705d048",
+      "value": {
+        "id": "83d0a699-e837-4900-9b2f-4de11705d048",
+        "created": "2026-11-13T05:30:53.935Z",
+        "updated": "2026-11-13T05:30:59.142Z",
+        "status": "paused",
+        "budget": 30,
+        "elapsedSeconds": 0,
+        "reviewSeconds": 0,
+        "reviewCount": 0,
+        "focus": [
+          "maths"
+        ],
+        "seen": [
+          "maths-linear"
+        ],
+        "questionId": "maths-linear:prepared:0",
+        "mode": "diagnostic",
+        "reason": "A short diagnostic finds your starting point.",
+        "assisted": false,
+        "repair": null,
+        "check": null,
+        "checked": [],
+        "lastHeartbeat": 1794547853935,
+        "teachingShown": false,
+        "support": null
+      }
+    },
+    {
+      "type": "question",
+      "id": "maths-linear:prepared:0",
+      "value": {
+        "prompt": "Solve 4x + 7 = 31. Give the value of x.",
+        "answer": "6",
+        "numeric": 6,
+        "unit": "",
+        "kind": "numeric",
+        "id": "maths-linear:prepared:0",
+        "skillId": "maths-linear",
+        "hint": "What operation would remove the constant term from both sides?",
+        "lesson": "An equation stays balanced when you apply the same operation to both sides. Undo addition or subtraction first, then multiplication or division. Substitute your result back to check.",
+        "example": "3x + 5 = 20 → 3x = 15 → x = 5. Check: 3 × 5 + 5 = 20.",
+        "provenance": "Prepared practice · not an official NESA question",
+        "difficulty": 1
+      }
+    },
+    {
+      "type": "event",
+      "id": "ff89e9ca-2344-432f-83f4-ace9f8aa820a",
+      "value": {
+        "id": "ff89e9ca-2344-432f-83f4-ace9f8aa820a",
+        "type": "session-start",
+        "at": "2026-11-13T05:30:53.943Z",
+        "sessionId": "83d0a699-e837-4900-9b2f-4de11705d048"
+      }
+    },
+    {
+      "type": "event",
+      "id": "4eadea27-7d53-467e-b206-aca76394ef89",
+      "value": {
+        "id": "4eadea27-7d53-467e-b206-aca76394ef89",
+        "type": "task-selected",
+        "at": "2026-11-13T05:30:53.963Z",
+        "sessionId": "83d0a699-e837-4900-9b2f-4de11705d048",
+        "skillId": "maths-linear",
+        "mode": "diagnostic",
+        "reason": "A short diagnostic finds your starting point."
+      }
+    }
+  ]
+}

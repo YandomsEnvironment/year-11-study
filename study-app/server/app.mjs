@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { z } from 'zod';
@@ -7,14 +8,18 @@ import { Store } from './store.mjs';
 import { Tutor } from './ai.mjs';
 import { appRoot, documents, subjects, skills, skillById, questionFor } from './content.mjs';
 import { localGrade, progressFrom, rankSkills } from './engine.mjs';
+import { findRepoRoot, getGitInfo, commitAndPushProgress, importProgressIfPresent, pullProgress, exportProgress } from './git-sync.mjs';
 const now=()=>new Date().toISOString();
 const uid=()=>crypto.randomUUID();
 const defaults={id:'main',budget:30,model:'gpt-5.4-mini',dailyAiLimit:60,enabledSubjects:['maths','biology','physics','english','software','extension'],year12Enabled:false,englishTexts:'',tafeCourse:'',notes:''};
 const bodySettings=z.object({budget:z.number().int().min(5).max(180),model:z.string().regex(/^[a-zA-Z0-9._-]{1,100}$/),dailyAiLimit:z.number().int().min(1).max(500),enabledSubjects:z.array(z.enum(['maths','biology','physics','english','software','extension'])).min(1),year12Enabled:z.boolean(),englishTexts:z.string().max(4000),tafeCourse:z.string().max(1000),notes:z.string().max(6000),apiKey:z.string().max(500).optional()});
 const HttpError=(message,status=400)=>Object.assign(new Error(message),{status});
-export function createApp({dataDir=path.join(appRoot,'data')}={}){
+export function createApp({dataDir=path.join(appRoot,'data'),repoDir}={}){
+ const isTestDir=dataDir.startsWith(os.tmpdir());
+ const resolvedRepoDir=repoDir!==undefined?repoDir:(isTestDir?null:findRepoRoot());
  const app=express();const store=new Store(dataDir);const tutor=new Tutor(store,path.join(dataDir,'secrets.json'));const inFlight=new Map();const nextJobs=new Map();
  if(!store.get('settings','main'))store.put('settings','main',defaults);
+ if(resolvedRepoDir)try{importProgressIfPresent(store,resolvedRepoDir);}catch{}
  app.disable('x-powered-by');
  app.use((req,res,next)=>{
   const host=(req.headers.host||'').split(':')[0];
@@ -39,7 +44,17 @@ export function createApp({dataDir=path.join(appRoot,'data')}={}){
  route('get','/api/health',()=>({ok:true,name:'Recall',version:1}));
  route('get','/api/state',()=>{
   const progress=states();const open=store.all('session').filter(s=>s.status!=='finished').at(-1);
-  return {settings:{...settings(),hasApiKey:!!tutor.key(),aiVerified:tutor.verified},subjects,skills:skills.map(({variants,lesson,example,hint,...s})=>({...s,...progress[s.id]})),documents:documents.map(({paragraphs,...d})=>({...d,paragraphCount:paragraphs.length})),session:publicSession(open),history:store.all('session').filter(s=>s.status==='finished').slice(-10).reverse().map(publicSession),deadlines:store.all('deadline'),usage:store.all('usage').slice(-100),counts:{due:Object.values(progress).filter(p=>p.due&&new Date(p.due)<=new Date()).length,retained:Object.values(progress).filter(p=>p.state==='retained').length,attempts:store.all('attempt').filter(a=>a.status==='graded').length}};
+  return {settings:{...settings(),hasApiKey:!!tutor.key(),aiVerified:tutor.verified},subjects,skills:skills.map(({variants,lesson,example,hint,...s})=>({...s,...progress[s.id]})),documents:documents.map(({paragraphs,...d})=>({...d,paragraphCount:paragraphs.length})),session:publicSession(open),history:store.all('session').filter(s=>s.status==='finished').slice(-10).reverse().map(publicSession),deadlines:store.all('deadline'),usage:store.all('usage').slice(-100),counts:{due:Object.values(progress).filter(p=>p.due&&new Date(p.due)<=new Date()).length,retained:Object.values(progress).filter(p=>p.state==='retained').length,attempts:store.all('attempt').filter(a=>a.status==='graded').length},git:resolvedRepoDir?getGitInfo(resolvedRepoDir):null};
+ });
+ route('get','/api/git/info',()=>resolvedRepoDir?getGitInfo(resolvedRepoDir):{isRepo:false});
+ route('post','/api/git/push',async()=>{
+  if(!resolvedRepoDir)throw HttpError('No Git repository detected.',400);
+  const lastFinished=store.all('session').filter(s=>s.status==='finished').at(-1);
+  return await commitAndPushProgress(store,lastFinished,resolvedRepoDir);
+ });
+ route('post','/api/git/pull',async()=>{
+  if(!resolvedRepoDir)throw HttpError('No Git repository detected.',400);
+  return await pullProgress(store,resolvedRepoDir);
  });
  route('get','/api/source/:id',req=>{const d=documents.find(d=>d.id===req.params.id);if(!d)throw HttpError('Source not found.',404);return d;});
  route('post','/api/settings',req=>{const parsed=bodySettings.parse(req.body);const {apiKey,...s}=parsed;if(apiKey!==undefined)tutor.saveKey(apiKey);store.put('settings','main',{id:'main',...s});return {ok:true,hasApiKey:!!tutor.key()};});
@@ -50,11 +65,17 @@ export function createApp({dataDir=path.join(appRoot,'data')}={}){
   const s={id:uid(),created:now(),updated:now(),status:'active',budget,elapsedSeconds:0,reviewSeconds:0,reviewCount:0,focus:[],seen:[],questionId:null,mode:null,reason:null,assisted:false,repair:null,check:null,checked:[],lastHeartbeat:Date.now()};store.put('session',s.id,s);event('session-start',{sessionId:s.id});return publicSession(s);
  });
  route('get','/api/session/:id',req=>publicSession(getSession(req.params.id)));
- route('post','/api/session/:id/action',req=>{
+ route('post','/api/session/:id/action',async req=>{
   const action=z.enum(['pause','resume','finish','continue','heartbeat','budget']).parse(req.body.action);const s=getSession(req.params.id);
   if(action==='heartbeat'&&s.status==='active'){const delta=Math.max(0,Math.min(90,(Date.now()-s.lastHeartbeat)/1000));s.elapsedSeconds+=delta;if(s.mode==='review')s.reviewSeconds+=delta;s.lastHeartbeat=Date.now();}
   if(action==='pause'){if(s.status==='finished')return publicSession(s);s.status='paused';}if(action==='resume'){if(s.status==='finished')throw HttpError('This session has finished. Start a new one.');s.status='active';s.lastHeartbeat=Date.now();}
-  if(action==='finish'){s.status='finished';s.finished=now();}
+  if(action==='finish'){
+   s.status='finished';s.finished=now();s.updated=now();store.put('session',s.id,s);
+   if(resolvedRepoDir){
+    try{s.gitSync=await commitAndPushProgress(store,s,resolvedRepoDir);}
+    catch(e){s.gitSync={success:false,committed:false,pushed:false,error:e.message||'Git push failed'};}
+   }
+  }
   if(action==='continue'){const other=store.all('session').find(x=>x.id!==s.id&&x.status!=='finished');if(other)throw HttpError('Another session is already open.');s.status='active';s.budget=Math.max(s.budget,Math.ceil(s.elapsedSeconds/60))+10;s.lastHeartbeat=Date.now();}
   if(action==='budget')s.budget=z.number().int().min(5).max(180).parse(req.body.budget);
   s.updated=now();store.put('session',s.id,s);return publicSession(s);

@@ -14,8 +14,25 @@ class FakeSpeech{
 }
 const initial={id:'speech-session',status:'active',budget:30,elapsedSeconds:0,mode:'diagnostic',reason:'Find the next useful skill.',created:'2027-01-01T01:00:00Z',question:{id:'speech-question',skillId:'maths-linear',prompt:'Solve 4x + 7 = 31. Give the value of x.',provenance:'Prepared practice',kind:'numeric'},skill:{id:'maths-linear',subject:'maths',title:'Linear equations',sourceUrl:'https://curriculum.nsw.edu.au'},latest:null,summary:{attempted:0,independent:0,gaps:[]},draft:null} as unknown as Session;
 let requests:{url:string;body:any}[]=[];
+const mockStorage = (()=>{
+ let store: Record<string, string> = {};
+ return {
+  getItem: (k: string) => store[k] ?? null,
+  setItem: (k: string, v: string) => { store[k] = String(v); },
+  removeItem: (k: string) => { delete store[k]; },
+  clear: () => { store = {}; },
+  get length() { return Object.keys(store).length; },
+  key: (i: number) => Object.keys(store)[i] ?? null,
+ };
+})();
+Object.defineProperty(globalThis, 'localStorage', { value: mockStorage, writable: true, configurable: true });
+if (typeof window !== 'undefined') {
+ Object.defineProperty(window, 'localStorage', { value: mockStorage, writable: true, configurable: true });
+}
 beforeEach(()=>{
- requests=[];localStorage.clear();vi.stubGlobal('SpeechRecognition',FakeSpeech);
+ requests=[];
+ mockStorage.clear();
+ vi.stubGlobal('SpeechRecognition',FakeSpeech);
  vi.stubGlobal('fetch',vi.fn(async(url:string,options:any={})=>{const body=JSON.parse(options.body||'{}');requests.push({url,body});
   const answer=url.endsWith('/answer');const attempt={id:body.submissionId,answer:body.answer,status:'graded',assisted:false,disputed:false,grade:{verdict:'correct',score:1,feedback:'The answer is correct.',criteria:[],misconceptions:[]}};
   const response=answer?{attempt,session:{...initial,latest:attempt,summary:{attempted:1,independent:1,gaps:[]}}}:{ok:true};return {ok:true,json:async()=>response};

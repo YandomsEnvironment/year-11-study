@@ -23,7 +23,8 @@ A personal, adaptive local study desk designed for focused daily learning:
 - **Voice-to-text dictation** for speaking through mathematical and scientific reasoning while working on physical paper.
 - **Prepared foundation tasks & offline practice** available out-of-the-box.
 - **Optional AI Tutor connection** via OpenAI API for contextual marking, question generation, and working photograph transcription.
-- **Privacy-first & local-first**: all study progress, database files (`recall.sqlite`), and API secrets remain strictly on your local machine and are excluded from Git tracking.
+- **Automatic GitHub Progress Sync**: When each study session finishes, Recall commits and pushes your progress directly to GitHub (`progress/study-progress.json` and `progress/README.md`). No external server or hosted database required.
+- **Privacy-first credentials**: API keys (`secrets.json`) and raw local caches remain strictly local and excluded from Git tracking, while study progress is version-controlled in the repository.
 
 ---
 
@@ -51,6 +52,7 @@ npm test
 
 ## Configuration & Data Privacy
 
+- **Progress Sync**: Study session history, attempts, and mastery states are automatically exported to `progress/study-progress.json` and committed & pushed to GitHub on session completion, with an overview dashboard in `progress/README.md`. Pulling on another machine automatically syncs your progress into the local desk.
 - **Database**: Local SQLite database located at `study-app/data/recall.sqlite` (auto-created on first run, gitignored).
 - **API Secrets**: If using AI tutoring, add your OpenAI API key in **Settings → Connect tutor** (saved locally to `study-app/data/secrets.json`, gitignored) or set the `OPENAI_API_KEY` environment variable.
 - **Backups**: Seven rolling daily backups are automatically saved under `study-app/data/backups/`.

@@ -30,7 +30,7 @@ export function createApp({dataDir=path.join(appRoot,'data'),repoDir}={}){
  app.use(express.json({limit:'25mb'}));
  const route=(method,url,fn)=>app[method](url,async(req,res,next)=>{try{res.json(await fn(req,res));}catch(e){next(e);}});
  const settings=()=>store.get('settings','main');
- const states=()=>Object.fromEntries(skills.map(s=>[s.id,progressFrom(store.all('attempt').filter(a=>a.skillId===s.id))]));
+ const states=()=>{const bySkill=Map.groupBy(store.all('attempt'),a=>a.skillId);return Object.fromEntries(skills.map(s=>[s.id,progressFrom(bySkill.get(s.id)||[])]));};
  const getSession=id=>{const s=store.get('session',id);if(!s)throw HttpError('Session not found.',404);return s;};
  const publicQuestion=q=>{if(!q)return null;const {answer,numeric,aliases,lesson,example,hint,criteria,...safe}=q;return safe;};
  const safeSkill=s=>{if(!s)return null;const {variants,lesson,example,hint,...safe}=s;return safe;};
@@ -43,8 +43,9 @@ export function createApp({dataDir=path.join(appRoot,'data'),repoDir}={}){
  const event=(type,detail)=>{const id=uid();store.put('event',id,{id,type,at:now(),...detail});};
  route('get','/api/health',()=>({ok:true,name:'Recall',version:1}));
  route('get','/api/state',()=>{
-  const progress=states();const open=store.all('session').filter(s=>s.status!=='finished').at(-1);
-  return {settings:{...settings(),hasApiKey:!!tutor.key(),aiVerified:tutor.verified},subjects,skills:skills.map(({variants,lesson,example,hint,...s})=>({...s,...progress[s.id]})),documents:documents.map(({paragraphs,...d})=>({...d,paragraphCount:paragraphs.length})),session:publicSession(open),history:store.all('session').filter(s=>s.status==='finished').slice(-10).reverse().map(publicSession),deadlines:store.all('deadline'),usage:store.all('usage').slice(-100),counts:{due:Object.values(progress).filter(p=>p.due&&new Date(p.due)<=new Date()).length,retained:Object.values(progress).filter(p=>p.state==='retained').length,attempts:store.all('attempt').filter(a=>a.status==='graded').length},git:resolvedRepoDir?getGitInfo(resolvedRepoDir):null};
+  const progress=states();const sessions=store.all('session');const open=sessions.filter(s=>s.status!=='finished').at(-1);
+  const attempts=store.all('attempt');
+  return {settings:{...settings(),hasApiKey:!!tutor.key(),aiVerified:tutor.verified},subjects,skills:skills.map(({variants,lesson,example,hint,...s})=>({...s,...progress[s.id]})),documents:documents.map(({paragraphs,...d})=>({...d,paragraphCount:paragraphs.length})),session:publicSession(open),history:sessions.filter(s=>s.status==='finished').sort((a,b)=>(b.finished||b.created).localeCompare(a.finished||a.created)).slice(0,10).map(publicSession),deadlines:store.all('deadline'),usage:store.all('usage').slice(-100),counts:{due:Object.values(progress).filter(p=>p.due&&new Date(p.due)<=new Date()).length,retained:Object.values(progress).filter(p=>p.state==='retained').length,attempts:attempts.filter(a=>a.status==='graded').length,pending:attempts.filter(a=>a.status==='pending').length},git:resolvedRepoDir?getGitInfo(resolvedRepoDir):null};
  });
  route('get','/api/git/info',()=>resolvedRepoDir?getGitInfo(resolvedRepoDir):{isRepo:false});
  route('post','/api/git/push',async()=>{
@@ -57,12 +58,24 @@ export function createApp({dataDir=path.join(appRoot,'data'),repoDir}={}){
   return await pullProgress(store,resolvedRepoDir);
  });
  route('get','/api/source/:id',req=>{const d=documents.find(d=>d.id===req.params.id);if(!d)throw HttpError('Source not found.',404);return d;});
+ route('get','/api/skill/:id/attempts',req=>{
+  if(!skillById.has(req.params.id))throw HttpError('Skill not found.',404);
+  return store.all('attempt').filter(a=>a.skillId===req.params.id&&a.status==='graded'&&!a.assisted&&!a.disputed&&a.grade?.verdict&&a.grade.verdict!=='uncertain').sort((a,b)=>b.created.localeCompare(a.created)).slice(0,5).map(a=>({id:a.id,created:a.created,verdict:a.grade.verdict}));
+ });
+ const reviewAttempt=a=>({attempt:a,question:publicQuestion(store.get('question',a.questionId)),skillTitle:skillById.get(a.skillId)?.title||'Practice question'});
+ route('get','/api/session/:id/recap',req=>{
+  const s=getSession(req.params.id);
+  return store.all('attempt').filter(a=>a.sessionId===s.id).map(reviewAttempt);
+ });
+ route('get','/api/attempts/pending',()=>store.all('attempt').filter(a=>a.status==='pending').map(reviewAttempt));
  route('post','/api/settings',req=>{const parsed=bodySettings.parse(req.body);const {apiKey,...s}=parsed;if(apiKey!==undefined)tutor.saveKey(apiKey);store.put('settings','main',{id:'main',...s});return {ok:true,hasApiKey:!!tutor.key()};});
  route('post','/api/connection/test',async()=>{const schema={type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false};const r=await tutor.request('connection_check',schema,'Return ok=true to confirm the tutor connection.');if(r.ok!==true)throw HttpError('The tutor did not confirm the connection.');return {ok:true};});
  route('post','/api/session/start',req=>{
   const existing=store.all('session').filter(s=>s.status!=='finished').at(-1);if(existing)return publicSession(existing);
   const budget=z.number().int().min(5).max(180).parse(req.body.budget||settings().budget);
-  const s={id:uid(),created:now(),updated:now(),status:'active',budget,elapsedSeconds:0,reviewSeconds:0,reviewCount:0,focus:[],seen:[],questionId:null,mode:null,reason:null,assisted:false,repair:null,check:null,checked:[],lastHeartbeat:Date.now()};store.put('session',s.id,s);event('session-start',{sessionId:s.id});return publicSession(s);
+  const targetSubject=z.string().optional().parse(req.body.subject);
+  if(targetSubject!==undefined&&!settings().enabledSubjects.includes(targetSubject))throw HttpError('Choose an enabled subject.');
+  const s={id:uid(),created:now(),updated:now(),status:'active',budget,targetSubject,elapsedSeconds:0,reviewSeconds:0,reviewCount:0,focus:[],seen:[],questionId:null,mode:null,reason:null,assisted:false,repair:null,check:null,checked:[],lastHeartbeat:Date.now()};store.put('session',s.id,s);event('session-start',{sessionId:s.id});return publicSession(s);
  });
  route('get','/api/session/:id',req=>publicSession(getSession(req.params.id)));
  route('post','/api/session/:id/action',async req=>{
@@ -84,26 +97,36 @@ export function createApp({dataDir=path.join(appRoot,'data'),repoDir}={}){
   let s=getSession(id);if(s.status!=='active')throw HttpError('Resume your session first.');
   const last=store.all('attempt').filter(a=>a.sessionId===id&&a.questionId===s.questionId).at(-1);
   if(s.questionId&&!last)return publicSession(s);
-  if(last?.status==='pending')throw HttpError('Your answer is waiting for marking. Retry marking before moving on.');
+  if(last?.status==='pending'&&!last.deferredAt)throw HttpError('Your answer is waiting for marking. Retry or mark it later before moving on.');
   const st=states();const ranking=rankSkills(skills,st,s,settings(),store.all('deadline'));
-  let selected=null;let question=null;
+  let selected=null;let question=null;let generationFailed=false;
+  const attemptsBySkill=Map.groupBy(store.all('attempt'),a=>a.skillId);
+  const cachedBySkill=Map.groupBy(store.all('question'),q=>q.skillId);
   for(const candidate of ranking){
-   const history=store.all('attempt').filter(a=>a.skillId===candidate.skill.id);
+   const history=attemptsBySkill.get(candidate.skill.id)||[];
    const used=new Set(history.filter(a=>a.sessionId===id).map(a=>a.questionId));
    const prepared=candidate.skill.variants.map((_,i)=>questionFor(candidate.skill,i));
    // Prefer least recently seen variant; never repeat a prepared prompt within a session.
    prepared.sort((a,b)=>history.filter(x=>x.questionId===a.id).length-history.filter(x=>x.questionId===b.id).length);
    question=prepared.find(q=>!used.has(q.id));
    if(!question){
-    const cached=store.all('question').filter(q=>q.skillId===candidate.skill.id&&!used.has(q.id)&&!history.some(a=>a.questionId===q.id));question=cached[0];
+    question=cachedBySkill.get(candidate.skill.id)?.find(q=>!history.some(a=>a.questionId===q.id));
    }
-   if(!question&&tutor.key()){
-    question={...await tutor.generate(candidate.skill,sourceFor(candidate.skill),history.slice(-6).map(a=>store.get('question',a.questionId)?.prompt)),id:uid(),skillId:candidate.skill.id};
+   if(!question&&!generationFailed&&tutor.key()){
+    try{
+     question={...await tutor.generate(candidate.skill,sourceFor(candidate.skill),history.slice(-6).map(a=>store.get('question',a.questionId)?.prompt)),id:uid(),skillId:candidate.skill.id};
+    }catch{generationFailed=true;}
    }
    if(question){selected=candidate;break;}
   }
-  if(!question||!selected)return {...publicSession(s),noMore:true,message:'You’ve used today’s prepared question variations. Finish here, or connect the live tutor for fresh tasks.'};
   s=getSession(id);if(s.status!=='active')return publicSession(s);
+  if(!question||!selected){
+   s.noMore=true;
+   s.message=generationFailed?'The tutor couldn’t prepare a new question, and all prepared questions for this session are used. Try again or finish here.':'You’ve used the prepared questions for this session. Connect the tutor for more, or finish here.';
+   store.put('session',id,s);
+   return publicSession(s);
+  }
+  delete s.noMore;delete s.message;
   store.put('question',question.id,question);s.questionId=question.id;s.mode=selected.mode;s.reason=selected.reason;s.assisted=false;s.teachingShown=false;s.support=null;
   if(!s.focus.includes(selected.skill.subject))s.focus.push(selected.skill.subject);
   s.seen.push(selected.skill.id);if(s.mode==='review')s.reviewCount++;
@@ -113,7 +136,7 @@ export function createApp({dataDir=path.join(appRoot,'data'),repoDir}={}){
  }
  route('post','/api/session/:id/next',req=>{const id=req.params.id;if(nextJobs.has(id))return nextJobs.get(id);const job=chooseNext(id).finally(()=>nextJobs.delete(id));nextJobs.set(id,job);return job;});
  route('post','/api/session/:id/draft',req=>{
-  const s=getSession(req.params.id);const body=z.object({questionId:z.string(),text:z.string().max(18000),photoId:z.string().nullable().optional()}).parse(req.body);if(body.questionId!==s.questionId)throw HttpError('Question changed; reload the session.');const id=s.id+':'+s.questionId;store.put('draft',id,{id,...body,updated:now()});return {ok:true};
+  const s=getSession(req.params.id);const body=z.object({questionId:z.string(),text:z.string().max(18000),photoId:z.string().nullable().optional(),inputMode:z.enum(['typed','dictation']).optional()}).parse(req.body);if(body.questionId!==s.questionId)throw HttpError('Question changed; reload the session.');const id=s.id+':'+s.questionId;store.put('draft',id,{id,...body,updated:now()});return {ok:true};
  });
  route('post','/api/session/:id/support',req=>{
   const s=getSession(req.params.id);const kind=z.enum(['hint','teach','answer']).parse(req.body.kind);const q=store.get('question',s.questionId);if(!q)throw HttpError('Start a question first.');s.assisted=true;s.teachingShown=kind!=='hint'||s.teachingShown;s.support=kind==='hint'?{kind,text:q.hint}:kind==='answer'?{kind,text:q.answer}:{kind,text:q.lesson,example:q.example};store.put('session',s.id,s);event('support-used',{sessionId:s.id,questionId:q.id,kind});return s.support;
@@ -129,10 +152,30 @@ export function createApp({dataDir=path.join(appRoot,'data'),repoDir}={}){
    if(!tutor.key()&&attempt.inputMode==='dictation'&&q.kind==='numeric'&&grade.verdict==='correct')grade.feedback='The final numerical answer is correct. Your original spoken working is saved. Full feedback on the reasoning is available when your tutor is connected.';
    if(attempt.assisted&&grade.verdict==='correct')grade.feedback='You got the answer with support. We’ll use a different question to check what you can do on your own.';
    attempt={...attempt,grade,status:'graded',error:null};
-   store.transaction(()=>{store.put('attempt',attempt.id,attempt);const s=getSession(attempt.sessionId);if(['incorrect','partial'].includes(grade.verdict)){s.repair=skill.id;s.check=null;}else if(grade.verdict==='correct'&&s.mode!=='check'&&!s.checked.includes(skill.id)){s.check=skill.id;}if(s.mode==='check'&&grade.verdict==='correct')s.check=null;s.updated=now();store.put('session',s.id,s);});
+   store.transaction(()=>{store.put('attempt',attempt.id,attempt);const s=getSession(attempt.sessionId);if(s.questionId!==attempt.questionId||attempt.deferredAt||s.status==='finished')return;if(['incorrect','partial'].includes(grade.verdict)){s.repair=skill.id;s.check=null;}else if(grade.verdict==='correct'&&s.mode!=='check'&&!s.checked.includes(skill.id)){s.check=skill.id;}if(s.mode==='check'&&grade.verdict==='correct')s.check=null;s.updated=now();store.put('session',s.id,s);});
    return {attempt,session:publicSession(getSession(attempt.sessionId))};
   }catch(e){attempt.error='Marking could not finish. Your answer is saved; retry when the connection is available.';store.put('attempt',attempt.id,attempt);throw e;}
  }
+ function startMarking(attempt){
+  const existing=inFlight.get(attempt.id);
+  if(existing)return existing;
+  const job=markAttempt(attempt).finally(()=>inFlight.delete(attempt.id));
+  inFlight.set(attempt.id,job);
+  return job;
+ }
+ route('post','/api/attempt/:id/defer',req=>{
+  const a=store.get('attempt',req.params.id);
+  if(!a)throw HttpError('Answer not found.',404);
+  if(inFlight.has(a.id))throw HttpError('Marking is still in progress.');
+  if(a.status==='pending'&&!a.deferredAt)store.put('attempt',a.id,{...a,deferredAt:now()});
+  return publicSession(getSession(a.sessionId));
+ });
+ route('post','/api/attempt/:id/retry',req=>{
+  const a=store.get('attempt',req.params.id);
+  if(!a)throw HttpError('Answer not found.',404);
+  if(a.status==='graded')return {attempt:a,session:publicSession(getSession(a.sessionId))};
+  return startMarking(a);
+ });
  route('post','/api/session/:id/answer',req=>{
   const body=z.object({submissionId:z.string().uuid(),questionId:z.string(),answer:z.string().max(18000),inputMode:z.enum(['typed','dictation']).optional(),notLearned:z.boolean().optional(),photoId:z.string().nullable().optional(),confirmedPhoto:z.boolean().optional()}).parse(req.body);
   const existing=store.get('attempt',body.submissionId);
@@ -143,7 +186,7 @@ export function createApp({dataDir=path.join(appRoot,'data'),repoDir}={}){
   if(!body.answer.trim()&&!body.notLearned)throw HttpError('Write an answer or choose “I haven’t learned this”.');
   const other=store.all('attempt').find(a=>a.sessionId===s.id&&a.questionId===s.questionId&&a.id!==body.submissionId);if(other)return {attempt:other,session:publicSession(s)};
   const q=store.get('question',s.questionId);const attempt=existing||{id:body.submissionId,sessionId:s.id,questionId:q.id,skillId:q.skillId,answer:body.answer,inputMode:body.inputMode||'typed',photoId:body.photoId||null,notLearned:!!body.notLearned,assisted:s.assisted,created:now(),status:'pending',disputed:false};store.put('attempt',attempt.id,attempt);
-  const job=markAttempt(attempt).finally(()=>inFlight.delete(attempt.id));inFlight.set(attempt.id,job);return job;
+  return startMarking(attempt);
  });
  route('post','/api/attempt/:id/dispute',req=>{const a=store.get('attempt',req.params.id);if(!a)throw HttpError('Answer not found.',404);a.disputed=true;a.disputeNote=z.string().max(3000).parse(req.body.note||'Student disputed the assessment');store.put('attempt',a.id,a);event('assessment-disputed',{attemptId:a.id});return {ok:true};});
  route('post','/api/photo',async req=>{

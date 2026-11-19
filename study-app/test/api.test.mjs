@@ -18,3 +18,46 @@ test('deadline hints and pending TAFE details are persisted without inventing a 
 test('automatic backup includes progress and photos but never credentials',async t=>{const {call,tutor,store,dir}=await setup(t);tutor.saveKey('secret-not-in-backup');await start(call);store.backupNow();const files=fs.readdirSync(path.join(dir,'backups'));assert.equal(files.length,1);const text=fs.readFileSync(path.join(dir,'backups',files[0]),'utf8');assert.ok(!text.includes('secret-not-in-backup'));assert.equal(JSON.parse(text).format,'recall-backup');assert.ok(JSON.parse(text).records.some(r=>r.type==='session'));});
 test('resolved gaps disappear from the session summary and help survives reload',async t=>{const {call,store}=await setup(t);let s=await start(call);await call(`/session/${s.id}/answer`,{submissionId:crypto.randomUUID(),questionId:s.question.id,answer:'0'});await call(`/session/${s.id}/support`,{kind:'teach'});assert.equal((await call(`/session/${s.id}`)).data.support.kind,'teach');s=(await call(`/session/${s.id}/next`,{})).data;assert.equal(s.support,null);const q=store.get('question',s.question.id);const r=(await call(`/session/${s.id}/answer`,{submissionId:crypto.randomUUID(),questionId:s.question.id,answer:q.answer})).data;assert.deepEqual(r.session.summary.gaps,[]);});
 test('dictated working receives contextual marking when a tutor is connected',async t=>{const {call,tutor,store}=await setup(t);const s=await start(call);tutor.saveKey('test-not-a-real-key');let marked='';tutor.grade=async(q,answer)=>{marked=answer;return {verdict:'partial',score:0.5,feedback:'The final answer is right, but explain the division step.',misconceptions:['Reasoning gap'],criteria:[]};};const answer='I did a step I am not sure about. My final answer is six.';const result=(await call(`/session/${s.id}/answer`,{submissionId:crypto.randomUUID(),questionId:s.question.id,answer,inputMode:'dictation'})).data;assert.equal(marked,answer);assert.equal(result.attempt.grade.verdict,'partial');assert.equal(store.get('attempt',result.attempt.id).inputMode,'dictation');});
+
+test('focused sessions persist and prepare questions when AI generation fails',async t=>{
+ const {call,store,tutor}=await setup(t);
+ assert.equal((await call('/session/start',{subject:'tafe'})).status,400);
+ const {data:started}=await call('/session/start',{subject:'physics',budget:20});
+ const session=store.get('session',started.id);
+ session.check='physics-point-302';
+ store.put('session',session.id,session);
+ tutor.saveKey('test-not-a-real-key');
+ let generationCalls=0;
+ tutor.generate=async()=>{generationCalls++;throw new Error('simulated unavailable tutor');};
+ const {status,data:next}=await call(`/session/${session.id}/next`,{});
+ assert.equal(status,200);
+ assert.equal(generationCalls,1);
+ assert.equal(next.targetSubject,'physics');
+ assert.equal(next.skill.subject,'physics');
+ assert.match(next.question.id,/:prepared:/);
+ assert.equal((await call('/state')).data.session.targetSubject,'physics');
+});
+
+test('deferred work survives moving on and can be graded from the session recap',async t=>{
+ const {call,store,tutor}=await setup(t);
+ const s=await start(call);
+ const submissionId=crypto.randomUUID();
+ tutor.saveKey('test-not-a-real-key');
+ tutor.grade=async()=>{throw new Error('simulated unavailable tutor');};
+ const answer='I subtract seven, then divide by four. My final answer is six.';
+ assert.equal((await call(`/session/${s.id}/answer`,{submissionId,questionId:s.question.id,answer,inputMode:'dictation'})).status,400);
+ assert.equal((await call(`/session/${s.id}/next`,{})).status,400);
+ await call(`/attempt/${submissionId}/defer`,{});
+ const {data:next}=await call(`/session/${s.id}/next`,{});
+ assert.notEqual(next.question.id,s.question.id);
+ assert.equal((await call('/attempts/pending')).data[0].attempt.answer,answer);
+ await call(`/session/${s.id}/action`,{action:'finish'});
+ tutor.grade=async()=>({verdict:'correct',score:1,feedback:'Independently solved.',criteria:[],misconceptions:[]});
+ const result=await call(`/attempt/${submissionId}/retry`,{});
+ assert.equal(result.data.attempt.status,'graded');
+ assert.equal(result.data.session.status,'finished');
+ assert.equal(result.data.session.question.id,next.question.id);
+ assert.equal((await call('/attempts/pending')).data.length,0);
+ assert.equal((await call(`/session/${s.id}/recap`)).data[0].attempt.grade.feedback,'Independently solved.');
+ assert.equal((await call(`/skill/${s.skill.id}/attempts`)).data[0].verdict,'correct');
+});

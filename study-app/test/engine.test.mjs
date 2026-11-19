@@ -9,6 +9,17 @@ test('algebra factors and answer aliases',()=>{const q=questionFor(skillById.get
 test('English analysis is never marked using word presence alone',()=>{const q=questionFor(skillById.get('english-evidence'));assert.equal(localGrade(q,'metaphor evidence effect quotation').verdict,'uncertain');assert.equal(localGrade(questionFor(skillById.get('english-device')),'metaphor').verdict,'correct');});
 test('no retention from repeated same-day answers or hints',()=>{assert.equal(progressFrom([attempt(1,'q1'),attempt(1,'q2'),attempt(1,'q3')]).state,'practising');assert.equal(progressFrom([attempt(1,'q1',{assisted:true}),attempt(2,'q2',{assisted:true}),attempt(3,'q3',{assisted:true})]).state,'learning');});
 test('retention needs three different questions across separate days',()=>{assert.equal(progressFrom([attempt(1),attempt(3),attempt(10)]).state,'retained');assert.equal(progressFrom([attempt(1,'same'),attempt(3,'same'),attempt(10,'same')]).state,'practising');});
+test('assisted success brings a review forward without undoing independent retention',()=>{
+ const retained=[attempt(1),attempt(3),attempt(10)];
+ const helped=attempt(11,'helped',{assisted:true});
+ const p=progressFrom([...retained,helped]);
+ assert.equal(p.state,'retained');
+ assert.equal(p.level,3);
+ assert.equal(p.due,'2027-02-12T07:00:00.000Z');
+ assert.deepEqual(p.successDays,progressFrom(retained).successDays);
+ const lapse=attempt(12,'lapse',{grade:{verdict:'incorrect',misconceptions:['sign error']}});
+ assert.equal(progressFrom([...retained,helped,lapse]).state,'learning');
+});
 test('review intervals advance and a lapse returns to learning',()=>{const a=[attempt(1),attempt(3),attempt(10),attempt(18),attempt(25)];const p=progressFrom(a);assert.equal(p.level,5);assert.equal(p.due,'2027-03-27T07:00:00.000Z');assert.equal(progressFrom([...a,attempt(26,'wrong',{grade:{verdict:'incorrect',misconceptions:['sign error']}})]).state,'learning');});
 test('uncertainty and disputed grades leave mastery unchanged',()=>{const a=[attempt(1)];assert.deepEqual(progressFrom([...a,attempt(2,'ambiguous',{grade:{verdict:'uncertain'}})]),progressFrom(a));assert.equal(progressFrom([attempt(1,'disputed',{disputed:true})]).state,'unknown');});
 test('Sydney dates used across UTC midnight boundary',()=>assert.equal(dayKey('2027-02-01T15:00:00Z'),'2027-02-02'));
@@ -18,3 +29,22 @@ test('repair task and fresh check precede other work',()=>{assert.equal(rankSkil
 test('prerequisites, subject focus and Year 12 limits',()=>{const rankings=rankSkills(skills,{}, {...session,focus:['english','physics']},settings);assert.ok(rankings.every(x=>['english','physics'].includes(x.skill.subject)&&x.skill.year!==12));assert.ok(rankings[0].skill.foundation);assert.ok(rankSkills(skills,{},session,{...settings,enabledSubjects:['biology']}).every(x=>x.skill.subject==='biology'));});
 test('all six current sources imported; no obsolete versions',()=>{assert.equal(documents.length,6);assert.ok(documents.every(d=>d.imported&&d.paragraphs.length>300));assert.equal(documents.find(d=>d.id==='biology').version,2025);assert.equal(documents.find(d=>d.id==='physics').version,2025);assert.ok(documents.find(d=>d.id==='maths').outcomes.some(o=>o.code==='MAV-11-01'));assert.ok(skills.filter(s=>!s.foundation).length>100);});
 test('maths source placeholders have been resolved',()=>{const doc=documents.find(d=>d.id==='maths');assert.ok(!doc.paragraphs.some(p=>p.includes('Loading')));});
+test('the Year 11 starter bank covers all six syllabus subjects and grades its prepared answers',()=>{
+ const starters=skills.filter(skill=>skill.year===11&&skill.variants.length);
+ for(const document of documents){
+  const included=starters.filter(skill=>skill.subject===document.id);
+  assert.equal(included.length,2);
+  for(const skill of included){
+   assert.equal(new Set(skill.variants.map(variant=>variant.prompt)).size,4);
+   assert.ok(skill.lesson&&skill.example&&skill.hint&&skill.sourceCode);
+   for(let index=0;index<skill.variants.length;index++){
+    const question=questionFor(skill,index);
+    const verdict=localGrade(question,[question.answer,question.unit].filter(Boolean).join(' ')).verdict;
+    assert.equal(verdict,question.kind==='rubric'?'uncertain':'correct',question.id);
+   }
+  }
+ }
+ const acceleration=questionFor(skillById.get('physics-point-313'));
+ assert.equal(localGrade(acceleration,'4 m/s²').verdict,'correct');
+ assert.equal(localGrade(acceleration,'Work complete. Acceleration equals four metres per second squared.').verdict,'correct');
+});

@@ -9,7 +9,7 @@ export function localGrade(question,answer){
  if(question.kind==='rubric'||question.kind==='ai')return {verdict:'uncertain',score:0,feedback:'This response needs contextual marking. Connect the AI tutor in Settings, or use the model answer to reflect. Your progress has not been changed.',misconceptions:[],criteria:question.criteria||[]};
  let correct=false;
  if(question.kind==='numeric'){
-  const working=(spokenFinalValue(input)||input).replace(/[−–]/g,'-');
+  const working=(spokenFinalValue(input)||input).replace(/[−–]/g,'-').replace(/²/g,'^2').replace(/³/g,'^3');
   const final=working.match(/(?:\b[a-z]+\s*=\s*)([-+]?\d*\.?\d+(?:\s*\/\s*[-+]?\d*\.?\d+)?\s*[a-zA-Z/²^\d ]*)\s*$/i);
   const numeric=(final?final[1]:working).replace(/^\s*[a-z]+\s*=\s*/i,'');
   const match=numeric.match(/^([-+]?\d*\.?\d+(?:\s*\/\s*[-+]?\d*\.?\d+)?)\s*(.*)$/);
@@ -41,12 +41,16 @@ export function progressFrom(attempts,now=Date.now()){
    const day=dayKey(a.created);
    if(!days.has(day)){level=Math.min(level+1,intervals.length);days.add(day);}questions.add(a.questionId);
    due=new Date(new Date(a.created).getTime()+intervals[Math.max(0,level-1)]*86400000).toISOString();failed=false;misconceptions=[];
+  }else if(a.grade.verdict==='correct'){
+   const checkBy=new Date(new Date(a.created).getTime()+86400000).toISOString();
+   if(!due||checkBy<due)due=checkBy;
+   if(!days.size)failed=true;
   }else{level=Math.max(0,level-1);due=new Date(new Date(a.created).getTime()+86400000).toISOString();failed=true;misconceptions=a.grade.misconceptions||[];}
  }
  return {state:failed?'learning':days.size>=3&&questions.size>=3&&level>=3?'retained':'practising',level,due,last,successDays:[...days],misconceptions};
 }
 export function rankSkills(skills,states,session,settings,deadlines=[],now=Date.now()){
- const enabled=skills.filter(s=>settings.enabledSubjects.includes(s.subject)&&!(s.year===12&&!settings.year12Enabled));
+ const enabled=skills.filter(s=>(session.targetSubject?s.subject===session.targetSubject:settings.enabledSubjects.includes(s.subject))&&!(s.year===12&&!settings.year12Enabled));
  const subjectLast={};
  for(const s of enabled){const last=states[s.id]?.last;if(last&&(!subjectLast[s.subject]||last>subjectLast[s.subject]))subjectLast[s.subject]=last;}
  const focus=new Set(session.focus||[]);

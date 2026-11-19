@@ -16,11 +16,15 @@ Sessions pause automatically when you leave the study view or switch away from t
 
 Choose Start studying. Sessions start around 30 minutes and can be paused, finished or extended. Reviews are capped so missed days do not create compulsory catch-up. Incorrect or partial answers lead to hints, explanations and a fresh retry. Independent correct answers lead to a fresh application check. Retention requires independent evidence across different days and questions; hints and explanations do not award it.
 
+Open **Session options** to change the duration or start a session focused on one enabled subject. The offline question bank includes foundation exercises and a Year 11 starter set for each of the six syllabus subjects. **Progress** shows review dates, recent independent results and session recaps. If tutor marking is unavailable, choose **Mark later** and retry from **Progress → Awaiting marking**.
+
+Choose **System**, **Light** or **Dark** under **Settings → Appearance**. The browser remembers your selection.
+
 Typing and JPG/PNG/WebP working photos are supported. Read and correct the photo transcription before marking. If marking is uncertain, mastery is unchanged. “This marking doesn’t seem right” excludes that answer from progress. An English paragraph is never automatically graded from keywords in prepared mode.
 
 ### Dictating while working on paper
 
-Click **Dictate** beside the answer box and allow your browser to use the microphone. Talk through your paper working; the app appends recognised speech to your existing answer and shows unfinished words separately. **Enter** stops capture, waits for the final words and checks the answer. **Stop dictation** stops capture without submitting, so you can edit first. After dictating, Enter checks your edited answer too; Shift + Enter adds a new line.
+Click **Dictate** below the answer box and allow your browser to use the microphone. Talk through your paper working. The app appends recognised speech to your existing answer and shows unfinished words separately. **Enter** stops capture, waits for the final words and checks the answer. **Esc** or **Stop dictation** stops capture so you can edit first. After dictating, Enter checks your edited answer too, and Shift + Enter adds a new line. A restored dictated draft keeps its dictation status for marking.
 
 The microphone stops when you leave the study view, pause, submit, change questions or switch away from the app. It never starts automatically. Your browser supplies speech recognition (including Australian English); browser support varies, and some browsers send audio to an online speech service. Google Chrome is a suitable fallback if the in-app browser cannot provide recognition. Recall saves the text, not microphone recordings. No OpenAI key is needed for browser dictation; live contextual marking still uses the configured tutor connection.
 

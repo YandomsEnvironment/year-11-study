@@ -39,8 +39,8 @@ beforeEach(()=>{
  }));
 });
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
-function Harness(){
- const [session,setSession]=useState(initial);const [busy,setBusy]=useState(false);const [visible,setVisible]=useState(true);const [error,setError]=useState('');
+function Harness({restored=initial}:{restored?:Session}={}){
+ const [session,setSession]=useState(restored);const [busy,setBusy]=useState(false);const [visible,setVisible]=useState(true);const [error,setError]=useState('');
  const data={settings:{hasApiKey:false},subjects:[],skills:[]} as unknown as AppState;
  const run=async(fn:()=>Promise<void>)=>{setBusy(true);try{await fn();}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
  return <><button onClick={()=>setVisible(false)}>Leave question</button><p data-testid="error">{error}</p><StudySession visible={visible} data={data} session={session} setSession={setSession} busy={busy} run={run} sync={async s=>setSession(s)} start={()=>{}} action={async()=>{}} remaining={30} onSettings={()=>{}}/></>;
@@ -74,4 +74,24 @@ test('Shift+Enter does not submit, and leaving the question stops capture',async
 test('unsupported browsers explain the fallback without requesting a microphone',()=>{
  vi.stubGlobal('SpeechRecognition',undefined);vi.stubGlobal('webkitSpeechRecognition',undefined);render(<Harness/>);
  expect((screen.getByRole('button',{name:'Dictate',exact:true}) as HTMLButtonElement).disabled).toBe(true);expect(screen.getByText(/Dictation needs a supported browser/)).toBeTruthy();
+});
+test('Escape returns focus to editing without submitting and saves dictation on a new line',async()=>{
+ render(<Harness/>);
+ const box=screen.getByRole('textbox',{name:'Your answer'}) as HTMLTextAreaElement;
+ fireEvent.change(box,{target:{value:'4x = 24\n'}});
+ fireEvent.click(screen.getByRole('button',{name:'Dictate',exact:true}));
+ const recogniser=FakeSpeech.current;
+ act(()=>recogniser.result('My answer is six.'));
+ fireEvent.keyDown(box,{key:'Escape'});
+ expect(recogniser.stops).toBe(1);
+ await act(async()=>recogniser.end());
+ expect(box.value).toBe('4x = 24\nMy answer is six.');
+ expect(box.readOnly).toBe(false);
+ expect(requests.filter(request=>request.url.endsWith('/answer'))).toHaveLength(0);
+ await waitFor(()=>expect(requests.some(request=>request.url.endsWith('/draft')&&request.body.inputMode==='dictation')).toBe(true));
+});
+test('a restored dictated draft still requests contextual marking',async()=>{
+ render(<Harness restored={{...initial,draft:{text:'My answer is six.',inputMode:'dictation'}}}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Check answer',exact:true}));
+ await waitFor(()=>expect(requests.find(request=>request.url.endsWith('/answer'))?.body.inputMode).toBe('dictation'));
 });

@@ -14,7 +14,13 @@ export function speechConstructor(scope:unknown=globalThis):SpeechConstructor|nu
  const host=scope as {SpeechRecognition?:SpeechConstructor;webkitSpeechRecognition?:SpeechConstructor};
  return host.SpeechRecognition||host.webkitSpeechRecognition||null;
 }
-export const joinTranscript=(a:string,b:string)=>!b.trim()?a:!a.trim()?b.trim():a.replace(/\s+$/,'')+' '+b.trim();
+export function joinTranscript(working:string,spoken:string){
+ const words=spoken.trim();
+ if(!words)return working;
+ if(!working.trim())return words;
+ if(/\n[^\S\r\n]*$/.test(working))return working+words;
+ return working.trimEnd()+' '+words;
+}
 const errorMessage=(error:string)=>({
  'not-allowed':'Microphone access was blocked. Allow the microphone for Recall in your browser, then click Dictate again.',
  'service-not-allowed':'This browser cannot start its speech service. Open Recall in Google Chrome, or keep typing your answer.',

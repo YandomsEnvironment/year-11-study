@@ -18,7 +18,7 @@ export function spokenNumber(value){
 export function spokenFinalValue(answer){
  if(String(answer).includes('?'))return null;
  let text=String(answer).trim().replace(/[.!]$/,'');
- const marker=/\b(?:(?:my\s+)?(?:final\s+)?answer\s+(?:is|equals)|(?:x|y|speed|velocity|force|current|resistance|voltage|total|value)\s+(?:is|equals))\s+/gi;
+ const marker=/\b(?:(?:my\s+)?(?:final\s+)?answer\s+(?:is|equals)|(?:x|y|speed|velocity|acceleration|force|current|resistance|voltage|total|value)\s+(?:is|equals))\s+/gi;
  const matches=[...text.matchAll(marker)];if(matches.length)text=text.slice(matches.at(-1).index+matches.at(-1)[0].length);
  const unitRules=[[/\s+(?:metres?|meters?)\s+per\s+second\s+squared$/i,'m/s^2'],[/\s+(?:metres?|meters?)\s+per\s+second$/i,'m/s'],[/\s+kilomet(?:res?|ers?)\s+per\s+hour$/i,'km/h'],[/\s+(?:newtons?)$/i,'N'],[/\s+(?:amps?|amperes?)$/i,'A'],[/\s+(?:volts?)$/i,'V'],[/\s+(?:ohms?)$/i,'ohm'],[/\s+(?:kilograms?)$/i,'kg']];
  let unit='';for(const [pattern,name] of unitRules){if(pattern.test(text)){text=text.replace(pattern,'');unit=name;break;}}

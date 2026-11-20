@@ -34,7 +34,7 @@ export class DictationController {
  private Ctor:SpeechConstructor;private callbacks:DictationCallbacks;
  private recogniser:Recogniser|null=null;private base='';private final='';private interimText='';
  private wanted=false;private disposed=false;private failed=false;private generation=0;
- private restartTimer:ReturnType<typeof setTimeout>|null=null;private stopTimer:ReturnType<typeof setTimeout>|null=null;
+ private restartTimer:ReturnType<typeof setTimeout>|null=null;private stopTimer:ReturnType<typeof setTimeout>|null=null;private startTimer:ReturnType<typeof setTimeout>|null=null;
  private pending:Promise<string>|null=null;private resolve:((value:string)=>void)|null=null;private reject:((error:Error)=>void)|null=null;
  constructor(Ctor:SpeechConstructor,callbacks:DictationCallbacks){this.Ctor=Ctor;this.callbacks=callbacks;}
  get active(){return this.wanted||!!this.pending;}
@@ -46,10 +46,13 @@ export class DictationController {
  }
  private open(){
   if(!this.wanted||this.disposed)return;
-  const generation=++this.generation;const r=new this.Ctor();this.recogniser=r;this.final='';this.interimText='';
+  this.restartTimer=null;
+  const generation=++this.generation;let r:Recogniser;
+  try{r=new this.Ctor();}catch{this.failStart('Dictation could not start. Reopen Recall with Start Recall.cmd to use Google Chrome, then allow the microphone.');return;}
+  this.recogniser=r;this.final='';this.interimText='';
   r.lang='en-AU';r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
   const current=()=>!this.disposed&&generation===this.generation;
-  r.onstart=()=>{if(!current())return;if(this.wanted)this.callbacks.state('listening');else{try{r.stop();}catch{r.abort();}}};
+  r.onstart=()=>{if(!current())return;this.clearStartTimer();if(this.wanted)this.callbacks.state('listening');else{try{r.stop();}catch{r.abort();}}};
   r.onresult=event=>{
    if(!current())return;
    const final:string[]=[];const interim:string[]=[];
@@ -60,6 +63,7 @@ export class DictationController {
   r.onerror=event=>{
    if(!current()||event.error==='no-speech')return;
    if(event.error==='aborted'&&!this.wanted)return;
+   this.clearStartTimer();
    this.failed=true;this.wanted=false;this.callbacks.error(errorMessage(event.error));
    this.completeRun();this.settle(false);
    try{r.abort();}catch{}
@@ -67,12 +71,20 @@ export class DictationController {
   };
   r.onend=()=>{
    if(!current())return;
+   this.clearStartTimer();
    this.completeRun();this.recogniser=null;
    if(this.wanted){this.callbacks.state('starting');this.restartTimer=setTimeout(()=>this.open(),350);}
    else this.settle(!this.failed);
   };
   this.callbacks.state('starting');
-  try{r.start();}catch{this.failed=true;this.wanted=false;this.callbacks.error('Dictation could not start. Check your microphone permission, or try Google Chrome.');this.recogniser=null;this.callbacks.state('idle');}
+  this.startTimer=setTimeout(()=>this.failStart('The microphone did not start. Allow microphone access, then try again. If this browser cannot transcribe speech, reopen Recall with Start Recall.cmd to use Google Chrome.'),10000);
+  try{r.start();}catch{this.failStart('Dictation could not start. Check your microphone permission, or reopen Recall with Start Recall.cmd to use Google Chrome.');}
+ }
+ private clearStartTimer(){if(this.startTimer)clearTimeout(this.startTimer);this.startTimer=null;}
+ private failStart(message:string){
+  this.clearStartTimer();this.failed=true;this.wanted=false;this.generation++;
+  const r=this.recogniser;this.recogniser=null;try{r?.abort();}catch{}
+  this.completeRun();this.callbacks.error(message);this.settle(false);
  }
  private completeRun(){
   this.base=joinTranscript(joinTranscript(this.base,this.final),this.interimText);
@@ -85,6 +97,7 @@ export class DictationController {
  }
  finish():Promise<string>{
   if(this.pending)return this.pending;
+  this.clearStartTimer();
   this.wanted=false;if(this.restartTimer)clearTimeout(this.restartTimer);this.restartTimer=null;
   if(!this.recogniser){this.callbacks.state('idle');return Promise.resolve(this.base);}
   this.pending=new Promise<string>((resolve,reject)=>{this.resolve=resolve;this.reject=reject;});
@@ -99,6 +112,7 @@ export class DictationController {
  }
  dispose(){
   this.wanted=false;this.disposed=true;this.generation++;
+  this.clearStartTimer();
   if(this.restartTimer)clearTimeout(this.restartTimer);if(this.stopTimer)clearTimeout(this.stopTimer);
   const r=this.recogniser;this.recogniser=null;try{r?.abort();}catch{}
   // Resolve waiting stops without emitting to an unmounted or different question.

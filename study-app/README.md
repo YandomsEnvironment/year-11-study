@@ -6,6 +6,8 @@ A local adaptive study desk for Year 11 in 2027 and HSC in 2028.
 
 Double-click **Start Recall.cmd** in the parent study folder. Requires Node.js 24 or later. The launcher opens http://127.0.0.1:4317 and keeps the local backend running without a terminal window. Reopening the launcher reuses a running instance.
 
+Recall defaults to a neutral charcoal and grey theme. The launcher prefers installed Google Chrome so browser dictation has a compatible speech service; otherwise it opens your default browser.
+
 Prepared foundation exercises work immediately. In **Settings**, add an OpenAI API key and choose Connect tutor to enable generated syllabus questions, contextual marking and photographs. API billing applies. The default model is `gpt-5.4-mini`, and the model and daily request limit are configurable. No key is bundled. Live AI is unverified until tested with your connection.
 
 The daily interface shows only the next useful task. **Help me** starts with a hint and changes to **Explain this**. Incorrect answers automatically receive a hint; **I haven’t learned this** opens teaching. Technical options, curriculum details and backup controls are collapsed. Tutor setup now saves and tests the key with one **Connect tutor** button.
@@ -16,7 +18,7 @@ Sessions pause automatically when you leave the study view or switch away from t
 
 Choose Start studying. Sessions start around 30 minutes and can be paused, finished or extended. Reviews are capped so missed days do not create compulsory catch-up. Incorrect or partial answers lead to hints, explanations and a fresh retry. Independent correct answers lead to a fresh application check. Retention requires independent evidence across different days and questions; hints and explanations do not award it.
 
-Open **Session options** to change the duration or start a session focused on one enabled subject. The offline question bank includes foundation exercises and a Year 11 starter set for each of the six syllabus subjects. **Progress** shows review dates, recent independent results and session recaps. If tutor marking is unavailable, choose **Mark later** and retry from **Progress → Awaiting marking**.
+Open **Session options** next to **Start studying** to change the duration or start a session focused on one enabled subject. The offline question bank includes foundation exercises and a Year 11 starter set for each of the six syllabus subjects. **Progress** shows review dates, recent independent results and session recaps. If tutor marking is unavailable, choose **Mark later** and retry from **Progress → Awaiting marking**.
 
 Choose **System**, **Light** or **Dark** under **Settings → Appearance**. The browser remembers your selection.
 
@@ -27,6 +29,8 @@ Typing and JPG/PNG/WebP working photos are supported. Read and correct the photo
 Click **Dictate** below the answer box and allow your browser to use the microphone. Talk through your paper working. The app appends recognised speech to your existing answer and shows unfinished words separately. **Enter** stops capture, waits for the final words and checks the answer. **Esc** or **Stop dictation** stops capture so you can edit first. After dictating, Enter checks your edited answer too, and Shift + Enter adds a new line. A restored dictated draft keeps its dictation status for marking.
 
 The microphone stops when you leave the study view, pause, submit, change questions or switch away from the app. It never starts automatically. Your browser supplies speech recognition (including Australian English); browser support varies, and some browsers send audio to an online speech service. Google Chrome is a suitable fallback if the in-app browser cannot provide recognition. Recall saves the text, not microphone recordings. No OpenAI key is needed for browser dictation; live contextual marking still uses the configured tutor connection.
+
+If the microphone stays on “Starting”, Recall times out after ten seconds, saves your existing answer and lets you retry or type. A browser speech service that fails during startup also recovers safely. For an unsupported or embedded browser, reopen **Start Recall.cmd** to use installed Google Chrome and allow microphone access.
 
 For numerical questions, explicit endings such as “my final answer is six” or “speed equals eight metres per second” are recognised by prepared marking. The original spoken working is retained. More complex spoken algebra and reasoning use contextual AI marking when connected; ambiguous work does not earn mastery automatically.
 

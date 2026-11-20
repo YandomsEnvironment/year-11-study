@@ -49,6 +49,27 @@ test('changing question or leaving capture ignores late results from the old mic
  const {controller,output,current}=setup();controller.start('');const r=current();r.result(['old working',true]);controller.dispose();r.result(['wrong question contamination',true]);r.end();assert.equal(output.text,'old working');assert.equal(r.aborts,1);
 });
 test('browser constructor detection includes prefixed browsers and an honest unavailable state',()=>{assert.equal(speechConstructor({}),null);assert.equal(speechConstructor({webkitSpeechRecognition:FakeSpeech}),FakeSpeech);assert.equal(speechConstructor({SpeechRecognition:FakeSpeech}),FakeSpeech);});
+
+test('a browser that exposes speech but never starts unlocks the answer and allows retry',t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ class SilentSpeech extends FakeSpeech {start(){}}
+ const output={state:'idle',error:'',text:''};
+ const controller=new DictationController(SilentSpeech,{text:t=>output.text=t,interim:()=>{},state:s=>output.state=s,error:e=>output.error=e});
+ controller.start('Saved working.');const first=FakeSpeech.instances.at(-1);
+ assert.equal(output.state,'starting');t.mock.timers.tick(12000);
+ assert.equal(output.state,'idle');assert.equal(controller.active,false);assert.equal(output.text,'Saved working.');assert.equal(first.aborts,1);
+ assert.match(output.error,/did not start/);
+ first.onstart?.();assert.equal(output.state,'idle');
+ controller.start(output.text);assert.equal(output.state,'starting');controller.dispose();
+});
+
+test('a speech constructor failure is reported without locking the answer',()=>{
+ class BrokenSpeech {constructor(){throw new Error('Unavailable service');}}
+ const output={state:'idle',error:''};
+ const controller=new DictationController(BrokenSpeech,{text:()=>{},interim:()=>{},state:s=>output.state=s,error:e=>output.error=e});
+ assert.doesNotThrow(()=>controller.start('Keep this answer.'));
+ assert.equal(controller.active,false);assert.equal(output.state,'idle');assert.match(output.error,/could not start/);controller.dispose();
+});
 test('spoken final answers and units can be marked without rewriting the stored reasoning',()=>{
  const reasoning='I subtract seven and divide by four. My final answer is six.';assert.equal(spokenFinalValue(reasoning),'6');assert.equal(spokenFinalValue('The speed equals eight metres per second.'),'8 m/s');assert.equal(spokenNumber('negative two point five'),-2.5);assert.equal(spokenNumber('twenty one'),21);assert.equal(spokenNumber('one hundred and six'),106);assert.equal(spokenNumber('one two'),null);assert.equal(spokenFinalValue('This poem mentions six people'),null);
  assert.equal(localGrade({kind:'numeric',numeric:6,unit:''},reasoning).verdict,'correct');assert.equal(localGrade({kind:'numeric',numeric:8,unit:'m/s'},'The speed equals eight metres per second.').verdict,'correct');

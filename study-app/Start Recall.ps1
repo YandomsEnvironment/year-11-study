@@ -1,8 +1,20 @@
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
+function Open-Recall {
+    # Embedded Chromium browsers can expose SpeechRecognition without a working speech service.
+    # Prefer installed Google Chrome for browser dictation, retaining the usual browser fallback.
+    $chromeCandidates = @(
+        (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
+    )
+    $chromePath = $chromeCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($chromePath) { Start-Process -FilePath $chromePath -ArgumentList 'http://127.0.0.1:4317' -WindowStyle Hidden }
+    else { Start-Process 'http://127.0.0.1:4317' }
+}
 try {
     $health = Invoke-RestMethod -Uri 'http://127.0.0.1:4317/api/health' -TimeoutSec 2
-    if ($health.name -eq 'Recall') { Start-Process 'http://127.0.0.1:4317'; exit }
+    if ($health.name -eq 'Recall') { Open-Recall; exit }
 } catch { }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Install Node.js 24 or later, then reopen Recall.' }
 if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'node_modules'))) {
@@ -18,7 +30,7 @@ Start-Process -FilePath $nodePath -ArgumentList 'server/index.mjs' -WorkingDirec
 for ($attempt = 0; $attempt -lt 40; $attempt++) {
     try {
         $health = Invoke-RestMethod -Uri 'http://127.0.0.1:4317/api/health' -TimeoutSec 2
-        if ($health.name -eq 'Recall') { Start-Process 'http://127.0.0.1:4317'; exit }
+        if ($health.name -eq 'Recall') { Open-Recall; exit }
     } catch { }
     Start-Sleep -Milliseconds 500
 }
